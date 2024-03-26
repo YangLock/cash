@@ -139,5 +139,3 @@ def get_num_iters(data_dict, batch_size: int, label: str = 'Train'):
 
     else:
         sys.exit( "Wrong Label Name! 'Train or Test'")
-
-

@@ -1,5 +1,4 @@
 import torch, sys
-from torchtext.data.functional import to_map_style_dataset
 
 import numpy as np
 from collections import defaultdict
@@ -12,7 +11,7 @@ def get_datainfo(args, device):
     beta = args.beta
 
     data_info = {}
-    data_path = './data/' + dataset + '.pt'
+    data_path = '../heprediction_data/' + dataset + '.pt'
 
     data_dict = torch.load(data_path)
     NodeEdgePair = torch.LongTensor(data_dict['NodeEdgePair'])
@@ -197,5 +196,3 @@ class BatchDataloader(object):
         labels = torch.FloatTensor(next_labels).to(self.device)
 
         return hyperedges, labels
-
-

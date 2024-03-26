@@ -1,3 +1,5 @@
+import sys
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -170,5 +172,3 @@ class MaxminAggregator(nn.Module):
         pred = F.sigmoid(self.classifier(aggregated_embedding))
 
         return pred, aggregated_embedding
-
-

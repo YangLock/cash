@@ -53,14 +53,13 @@ def evaluate(model, g, n_feat, he_feat, dataloader, iters, method):
     return test_preds.tolist(), test_labels.tolist()
 
 
-
 def train(args, data_info, node_aggr_info, device):
 
     best_accuracy = [0.0 for _ in range(args.num_split)]
     best_epoch = [0 for _ in range(args.num_split)]
 
     for split in range(args.num_split): # number of splits (default: 5)
-        data_dict = torch.load(f'./data/splits/{args.dataset}split{split}.pt')
+        data_dict = torch.load(f'../heprediction_data/splits/{args.dataset}split{split}.pt')
         ground = data_dict["ground_train"] + data_dict["ground_valid"] # ground_train + train_only?
         g = utils.gen_DGLGraph_with_droprate(ground, 0, method=args.augment_method).to(device)
 
@@ -83,7 +82,7 @@ def train(args, data_info, node_aggr_info, device):
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=10) # learning rate scheduling
 
-        average_precision = AveragePrecision()
+        average_precision = AveragePrecision(task='binary')
 
         # Training phase
         # 1. Hypergraph encoder (HGNN model) + Projection
@@ -211,6 +210,7 @@ def train(args, data_info, node_aggr_info, device):
         print(f'=====\t Split: {split} \t Best Accuracy: {best_accuracy[split]:.4f} \t Best Epoch: {best_epoch[split]} \t=====')
         print(' ')
 
+
 def test(args, data_info, node_aggr_info, device):
 
     sns_avg_roc = []
@@ -229,7 +229,7 @@ def test(args, data_info, node_aggr_info, device):
     print('=========================================== Test Start ================================================')
     print('#Split \t ROC SNS | MNS | CNS | Mixed | Average \t AP SNS | MNS | CNS | Mixed | Average')
     for split in range(args.num_split): # number of splits (default: 5)
-        data_dict = torch.load(f'./data/splits/{args.dataset}split{split}.pt')
+        data_dict = torch.load(f'../heprediction_data/splits/{args.dataset}split{split}.pt')
         ground = data_dict["ground_train"] + data_dict["ground_valid"]
         g = utils.gen_DGLGraph_with_droprate(ground, 0).to(device)
 
@@ -336,8 +336,6 @@ def test(args, data_info, node_aggr_info, device):
     print(f'{std_sns_roc:.4f}\t{std_mns_roc:.4f}\t{std_cns_roc:.4f}\t{std_mixed_roc:.4f}\t{std_average_roc:.4f}\t{std_sns_ap:.4f}\t{std_mns_ap:.4f}\t{std_cns_ap:.4f}\t{std_mixed_ap:.4f}\t{std_average_ap:.4f}')
 
 
-
-
 if __name__ == '__main__':
     args = utils.parse_args()
     utils.print_summary(args)
@@ -350,6 +348,3 @@ if __name__ == '__main__':
     train(args, data_info, node_aggr_info, device)
     if args.train_only == 0:
         test(args, data_info, node_aggr_info, device)
-
-
-

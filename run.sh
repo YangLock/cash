@@ -1,0 +1,11 @@
+python3 -u run.py \
+    --gpu_index=0 \
+    --batch_size=16 \
+    --ns_method=SNS \
+    --h_dim=512 \
+    --proj_dim=512 \
+    --drop_feature_rate=0.24 \
+    --drop_incidence_rate=0.4 \
+    --num_epochs=200 \
+    --dataset=citeseer \
+    --learning_rate=0.005 \
