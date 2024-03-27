@@ -2,6 +2,7 @@ import torch, sys
 
 import numpy as np
 from collections import defaultdict
+import os
 
 
 def get_datainfo(args, device):
@@ -11,7 +12,7 @@ def get_datainfo(args, device):
     beta = args.beta
 
     data_info = {}
-    data_path = '../heprediction_data/' + dataset + '.pt'
+    data_path = os.path.join(args.data_path, f"{dataset}.pt")
 
     data_dict = torch.load(data_path)
     NodeEdgePair = torch.LongTensor(data_dict['NodeEdgePair'])

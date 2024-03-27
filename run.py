@@ -30,6 +30,26 @@ def set_random_seeds(random_seed=0):
     torch.backends.cudnn.benchmark = False
     np.random.seed(random_seed)
     random.seed(random_seed)
+    
+
+def _init_(args):
+    args.exp_name = f"exp_{args.dataset}_{time.strftime('%m%d-%H:%M')}"
+    
+    # create ./checkpoints path
+    if not os.path.exists(args.ckpt_dir):
+        os.makedirs(args.ckpt_dir)
+    
+    # create ./checkpoints/exp_dataset_timestamp path
+    exp_dir = os.path.join(args.ckpt_dir, args.exp_name)
+    args.exp_dir = exp_dir
+    if not os.path.exists(exp_dir):
+        os.makedirs(exp_dir)
+    
+    # create ./checkpoints/exp_dataset_timestamp/models
+    models_dir = os.path.join(exp_dir, 'models')
+    args.models_dir = models_dir
+    if not os.path.exists(models_dir):
+        os.makedirs(models_dir)
 
 
 def evaluate(model, g, n_feat, he_feat, dataloader, iters, method):
@@ -49,17 +69,18 @@ def evaluate(model, g, n_feat, he_feat, dataloader, iters, method):
 
         test_preds = torch.sigmoid(torch.stack(test_preds).squeeze())
         test_labels = torch.cat(test_labels, dim=0)
+        test_labels = torch.tensor(test_labels, dtype=torch.long)
 
     return test_preds.tolist(), test_labels.tolist()
 
 
-def train(args, data_info, node_aggr_info, device):
+def train(args, data_info, node_aggr_info, device, logger):
 
     best_accuracy = [0.0 for _ in range(args.num_split)]
     best_epoch = [0 for _ in range(args.num_split)]
 
     for split in range(args.num_split): # number of splits (default: 5)
-        data_dict = torch.load(f'../heprediction_data/splits/{args.dataset}split{split}.pt')
+        data_dict = torch.load(f'{args.data_path}/splits/{args.dataset}split{split}.pt')
         ground = data_dict["ground_train"] + data_dict["ground_valid"] # ground_train + train_only?
         g = utils.gen_DGLGraph_with_droprate(ground, 0, method=args.augment_method).to(device)
 
@@ -88,8 +109,8 @@ def train(args, data_info, node_aggr_info, device):
         # 1. Hypergraph encoder (HGNN model) + Projection
         # 2. Candidate scoring (positive + negative)
         # 3. Loss computation and backpropagation
-        print(f'============================================ Split {split} ==================================================')
-        print('#Epoch \t Train Loss \t ROC SNS | MNS | CNS | Mixed | Average \t AP SNS | MNS | CNS | Mixed | Average')
+        logger.info(f'============================================ Split {split} ==================================================')
+        logger.info('#Epoch \t Train Loss \t ROC SNS | MNS | CNS | Mixed | Average \t AP SNS | MNS | CNS | Mixed | Average')
 
         patience_epoch = 0
         for epoch in range(args.num_epochs):
@@ -153,11 +174,11 @@ def train(args, data_info, node_aggr_info, device):
 
             if args.train_only == 1: # for scalability evaluation
                 epoch_time = time.time() - epoch_start_time
-                print ('Training time per epoch: {:.4f}'.format(epoch_time))
+                logger.info ('Training time per epoch: {:.4f}'.format(epoch_time))
                 average_time += epoch_time
 
                 if epoch == 20: # run 20 epochs and 
-                    print ('Average Training time per epoch: {:.4f}'.format(average_time/20))
+                    logger.info ('Average Training time per epoch: {:.4f}'.format(average_time/20))
                     average_time = 0.0
                     break
                 continue
@@ -191,7 +212,7 @@ def train(args, data_info, node_aggr_info, device):
             roc_average = (roc_sns+roc_mns+roc_cns+roc_mixed)/4
             ap_average = (ap_sns+ap_mns+ap_cns+ap_mixed)/4
 
-            print(f' {epoch}: \t {epoch_loss:.4f} \t {roc_sns:.4f} {roc_mns:.4f} {roc_cns:.4f} {roc_mixed:.4f} {roc_average:.4f} \t {ap_sns:.4f} {ap_mns:.4f} {ap_cns:.4f} {ap_mixed:.4f} {ap_average:.4f}')
+            logger.info(f' {epoch}: \t {epoch_loss:.4f} \t {roc_sns:.4f} {roc_mns:.4f} {roc_cns:.4f} {roc_mixed:.4f} {roc_average:.4f} \t {ap_sns:.4f} {ap_mns:.4f} {ap_cns:.4f} {ap_mixed:.4f} {ap_average:.4f}')
 
             if roc_average > best_accuracy[split]:
                 best_accuracy[split] = roc_average
@@ -199,19 +220,19 @@ def train(args, data_info, node_aggr_info, device):
                 patience_epoch = 0
 
                 # save model here
-                torch.save(model.state_dict(), f"{args.model_dir}/model_gpu{args.gpu_index}_{split}.pkt")
+                torch.save(model.state_dict(), f"{args.models_dir}/model_gpu{args.gpu_index}_{split}.pkt")
             else:
                 patience_epoch += 1
                 if patience_epoch >= 20:
-                    print('=== Early Stopping')
+                    logger.info('=== Early Stopping')
                     break
 
-        print(' ')
-        print(f'=====\t Split: {split} \t Best Accuracy: {best_accuracy[split]:.4f} \t Best Epoch: {best_epoch[split]} \t=====')
-        print(' ')
+        logger.info(' ')
+        logger.info(f'=====\t Split: {split} \t Best Accuracy: {best_accuracy[split]:.4f} \t Best Epoch: {best_epoch[split]} \t=====')
+        logger.info(' ')
 
 
-def test(args, data_info, node_aggr_info, device):
+def test(args, data_info, node_aggr_info, device, logger):
 
     sns_avg_roc = []
     sns_avg_ap = []
@@ -225,11 +246,11 @@ def test(args, data_info, node_aggr_info, device):
     average_avg_ap = []
 
 
-    print(' ')
-    print('=========================================== Test Start ================================================')
-    print('#Split \t ROC SNS | MNS | CNS | Mixed | Average \t AP SNS | MNS | CNS | Mixed | Average')
+    logger.info(' ')
+    logger.info('=========================================== Test Start ================================================')
+    logger.info('#Split \t ROC SNS | MNS | CNS | Mixed | Average \t AP SNS | MNS | CNS | Mixed | Average')
     for split in range(args.num_split): # number of splits (default: 5)
-        data_dict = torch.load(f'../heprediction_data/splits/{args.dataset}split{split}.pt')
+        data_dict = torch.load(f'{args.data_path}/splits/{args.dataset}split{split}.pt')
         ground = data_dict["ground_train"] + data_dict["ground_valid"]
         g = utils.gen_DGLGraph_with_droprate(ground, 0).to(device)
 
@@ -245,9 +266,9 @@ def test(args, data_info, node_aggr_info, device):
 
         encoder = models.HypergraphEncoder(args.h_dim, data_info['input_dim'], args.dropout, n_norm, n_norm_sum, he_norm, he_norm_sum)
         model = models.OurModel(encoder, args.proj_dim, node_aggr_info).to(device)
-        model.load_state_dict(torch.load(f"{args.model_dir}/model_gpu{args.gpu_index}_{split}.pkt"))
+        model.load_state_dict(torch.load(f"{args.models_dir}/model_gpu{args.gpu_index}_{split}.pkt"))
 
-        average_precision = AveragePrecision()
+        average_precision = AveragePrecision(task='binary')
 
         # Test phase
         # 1. postiive dataset + four negative datasets (SNS, MNS, CNS, and Mixed)
@@ -288,7 +309,7 @@ def test(args, data_info, node_aggr_info, device):
         average_avg_roc.append(roc_average)
         average_avg_ap.append(ap_average)
 
-        print(f'{split} \t {roc_sns:.4f} {roc_mns:.4f} {roc_cns:.4f} {roc_mixed:.4f} {roc_average:.4f} \t {ap_sns:.4f} {ap_mns:.4f} {ap_cns:.4f} {ap_mixed:.4f} {ap_average:.4f}')
+        logger.info(f'{split} \t {roc_sns:.4f} {roc_mns:.4f} {roc_cns:.4f} {roc_mixed:.4f} {roc_average:.4f} \t {ap_sns:.4f} {ap_mns:.4f} {ap_cns:.4f} {ap_mixed:.4f} {ap_average:.4f}')
 
     final_sns_roc = sum(sns_avg_roc)/len(sns_avg_roc)
     final_mns_roc = sum(mns_avg_roc)/len(mns_avg_roc)
@@ -328,23 +349,32 @@ def test(args, data_info, node_aggr_info, device):
         std_average_ap = 0.0 
 
 
-    print('============================================ Test End =================================================')
-    print(' ')
-    print('AUROC \t\t\t\t\t AP')
-    print('SNS\tMNS\tCNS\tMixed\tAverage\tSNS\tMNS\tCNS\tMixed\tAverage')
-    print(f'{final_sns_roc:.4f}\t{final_mns_roc:.4f}\t{final_cns_roc:.4f}\t{final_mixed_roc:.4f}\t{final_average_roc:.4f}\t{final_sns_ap:.4f}\t{final_mns_ap:.4f}\t{final_cns_ap:.4f}\t{final_mixed_ap:.4f}\t{final_average_ap:.4f}')
-    print(f'{std_sns_roc:.4f}\t{std_mns_roc:.4f}\t{std_cns_roc:.4f}\t{std_mixed_roc:.4f}\t{std_average_roc:.4f}\t{std_sns_ap:.4f}\t{std_mns_ap:.4f}\t{std_cns_ap:.4f}\t{std_mixed_ap:.4f}\t{std_average_ap:.4f}')
+    logger.info('============================================ Test End =================================================')
+    logger.info(' ')
+    logger.info('AUROC \t\t\t\t\t AP')
+    logger.info('SNS\tMNS\tCNS\tMixed\tAverage\tSNS\tMNS\tCNS\tMixed\tAverage')
+    logger.info(f'{final_sns_roc:.4f}\t{final_mns_roc:.4f}\t{final_cns_roc:.4f}\t{final_mixed_roc:.4f}\t{final_average_roc:.4f}\t{final_sns_ap:.4f}\t{final_mns_ap:.4f}\t{final_cns_ap:.4f}\t{final_mixed_ap:.4f}\t{final_average_ap:.4f}')
+    logger.info(f'{std_sns_roc:.4f}\t{std_mns_roc:.4f}\t{std_cns_roc:.4f}\t{std_mixed_roc:.4f}\t{std_average_roc:.4f}\t{std_sns_ap:.4f}\t{std_mns_ap:.4f}\t{std_cns_ap:.4f}\t{std_mixed_ap:.4f}\t{std_average_ap:.4f}')
 
 
 if __name__ == '__main__':
+    # get args
     args = utils.parse_args()
-    utils.print_summary(args)
+    
+    # init args
+    _init_(args)
+    
+    # get logger
+    logger = utils.get_logger(args)
+    
+    # logger.info summary and set seed
+    utils.print_summary(args, logger)
     set_random_seeds(args.seed)
 
-    device = torch.device("cuda:{}".format(args.gpu_index))
+    device = torch.device(f"cuda:{args.gpu_index}")
     data_info = data.get_datainfo(args, device)
     node_aggr_info = {'nhead': args.num_heads, 'nlayer': args.num_layers, 'h_dim': args.h_dim, 'dropout': args.dropout}
 
-    train(args, data_info, node_aggr_info, device)
+    train(args, data_info, node_aggr_info, device, logger)
     if args.train_only == 0:
-        test(args, data_info, node_aggr_info, device)
+        test(args, data_info, node_aggr_info, device, logger)

@@ -1,6 +1,8 @@
 import argparse
 import warnings
 import logging
+import os
+import time
 
 import dgl, random, math, sys
 import numpy as np
@@ -14,7 +16,7 @@ def parse_args():
     parser.add_argument("--gpu_index", type=int, default=0, help="GPU index. Necessary for specifying the CUDA device.")
     parser.add_argument("--ns_method", type=str, default='SNS', help="Negative sampling method.")
     parser.add_argument('--dataset', type=str, default='citeseer', help='Name of dataset.')
-    parser.add_argument('--data_path', type=str, default='./data', help='Data path.')
+    parser.add_argument('--data_path', type=str, default='../heprediction_data', help='Data path.')
     parser.add_argument("--num_split", type=int, default=5, help="Number of split datasets.")
 
     parser.add_argument("--h_dim", type=int, default=512, help="Hidden Embedding dimensionality.")
@@ -28,7 +30,7 @@ def parse_args():
     parser.add_argument('--use_contrastive', type=int, default=1, help='Use Contrastive Loss: 1 (use) or 0 (no use)')
     parser.add_argument('--contrast_ratio', type=float, default=0.4, help='Contrastive loss control factor')
 
-    parser.add_argument("--learning_rate", type=float, default=5e-04, help="Learning rate.")
+    parser.add_argument("--learning_rate", type=float, default=5e-03, help="Learning rate.")
     parser.add_argument('--weight_decay', type=float, default=5e-04, help='Dropout probability.')
     parser.add_argument('--dropout', type=float, default=0.4, help='Dropout probability.')
     parser.add_argument('--alpha', type=float, default=1, help='Hyperedge Normalization Factor of HNHN.')
@@ -38,40 +40,63 @@ def parse_args():
     parser.add_argument("--clip", type=float, default=0.01, help="Upper/lower bound of parameters.")
 
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='Random seed (default: 1)')
-    parser.add_argument('--model_dir', type=str, default='./checkpoints', help='Path for saving the trained model')
+    parser.add_argument('--ckpt_dir', type=str, default='./checkpoints', help='Path for saving the trainging result')
+    parser.add_argument('--exp_dir', type=str, default='', help="The path of current experiment")
+    parser.add_argument('--models_dir', type=str, default='', help="The path of current experiment's models")
 
     parser.add_argument("--train_ratio", type=float, default=1.0, help="Proportion of training data.")
     parser.add_argument("--train_only", type=int, default=0, help="Training only: 1")
+    parser.add_argument("--exp_name", type=str, default='', help="The name of current experiment")
     args = parser.parse_args()
 
     return args
 
-def print_summary(args):
+def print_summary(args, logger: logging.Logger):
     # Summary of training information
-    print('========================================== Training Summary ==========================================')
-    print ('    - GPU INDEX = %s' % (args.gpu_index))
-    print ('    - DATASET = %s' % (args.dataset))
-    print ('    - NUM SPLITS = %s' % (args.num_split))
-    print ('    - AUGMENT METHOD = %s' % (args.augment_method))
-    print ('    - NODE AGGREGATE METHOD = %s' % (args.aggre_method))
-    print ('    - USE CONTRASTIVE = %s' % (args.use_contrastive))
-    print ('    - NS METHOD = %s' % (args.ns_method))
-    print (' ')
-    print ('    - CONTRAST LOSS RATIO = %s' % (args.contrast_ratio))
-    print ('    - HIDDEN DIM = %s' % (args.h_dim))
-    print ('    - PROJECTION DIM = %s' % (args.proj_dim))
-    print ('    - NODE FEATURE DROP RATE = %s' % (args.drop_feature_rate))
-    print ('    - INCIDENCE DROP RATE = %s' % (args.drop_incidence_rate))
-    print ('    - NUM LAYERS = ' + str(args.num_layers))
-    print ('    - NUM HEADS = ' + str(args.num_heads))
-    print (' ')
-    print ('    - NUM EPOCHS = ' + str(args.num_epochs))
-    print ('    - BATCH SIZE = %s' % str(args.batch_size))
-    print ('    - LEARNING RATE = ' + str(args.learning_rate))
-    print ('    - WEIGHT DECAY = %s' % (args.weight_decay))
-    print ('    - GRADIENT CLIP = ' + str(args.clip))
-    print ('    - DROPOUT = %s' % (args.dropout))
-    print (' ')
+    logger.info('========================================== Training Summary ==========================================')
+    logger.info('    - GPU INDEX = %s' % (args.gpu_index))
+    logger.info('    - DATASET = %s' % (args.dataset))
+    logger.info('    - NUM SPLITS = %s' % (args.num_split))
+    logger.info('    - AUGMENT METHOD = %s' % (args.augment_method))
+    logger.info('    - NODE AGGREGATE METHOD = %s' % (args.aggre_method))
+    logger.info('    - USE CONTRASTIVE = %s' % (args.use_contrastive))
+    logger.info('    - NS METHOD = %s' % (args.ns_method))
+    logger.info(' ')
+    logger.info('    - CONTRAST LOSS RATIO = %s' % (args.contrast_ratio))
+    logger.info('    - HIDDEN DIM = %s' % (args.h_dim))
+    logger.info('    - PROJECTION DIM = %s' % (args.proj_dim))
+    logger.info('    - NODE FEATURE DROP RATE = %s' % (args.drop_feature_rate))
+    logger.info('    - INCIDENCE DROP RATE = %s' % (args.drop_incidence_rate))
+    logger.info('    - NUM LAYERS = ' + str(args.num_layers))
+    logger.info('    - NUM HEADS = ' + str(args.num_heads))
+    logger.info(' ')
+    logger.info('    - NUM EPOCHS = ' + str(args.num_epochs))
+    logger.info('    - BATCH SIZE = %s' % str(args.batch_size))
+    logger.info('    - LEARNING RATE = ' + str(args.learning_rate))
+    logger.info('    - WEIGHT DECAY = %s' % (args.weight_decay))
+    logger.info('    - GRADIENT CLIP = ' + str(args.clip))
+    logger.info('    - DROPOUT = %s' % (args.dropout))
+    logger.info(' ')
+    
+    
+def get_logger(args):
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter(fmt="[%(asctime)s|%(filename)s|%(levelname)s] %(message)s",
+                                  datefmt="%a %b %d %H:%M:%S %Y")
+    
+    # StreamHandler
+    sHandler = logging.StreamHandler()
+    sHandler.setFormatter(formatter)
+    logger.addHandler(sHandler)
+
+    # FileHandler
+    fHandler = logging.FileHandler(os.path.join(args.exp_dir, f"train_{args.dataset}.log"), mode='w')
+    fHandler.setLevel(logging.DEBUG)
+    fHandler.setFormatter(formatter)
+    logger.addHandler(fHandler)
+
+    return logger
 
 
 def gen_DGLGraph_with_droprate(ground, drop_rate, method='hyperedge'):

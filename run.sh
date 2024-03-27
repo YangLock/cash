@@ -1,6 +1,6 @@
 python3 -u run.py \
     --gpu_index=0 \
-    --batch_size=16 \
+    --batch_size=32 \
     --ns_method=SNS \
     --h_dim=512 \
     --proj_dim=512 \
